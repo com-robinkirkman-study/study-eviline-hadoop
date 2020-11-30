@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +36,8 @@ import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.lib.input.LineRecordReader;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
+import org.eviline.core.Block;
 import org.eviline.core.Engine;
 import org.eviline.core.Field;
 import org.eviline.core.ai.AIPlayer;
@@ -43,13 +46,13 @@ import org.eviline.core.ai.DefaultFitness;
 import org.eviline.core.ai.Player;
 
 public class FitnessJob {
-  public static final String FIELD_HEIGHT = FitnessJob.class.getName() + ".field_height";
   public static final String GARBAGE_HEIGHT = FitnessJob.class.getName() + ".garbage_height";
   public static final String LOOKAHEAD = FitnessJob.class.getName() + ".lookahead";
   public static final String RETRIES = FitnessJob.class.getName() + ".retries";
   public static final String GENERATION_SIZE = FitnessJob.class.getName() + ".generation_size";
 
   public static void configureJob(Job job) {
+    job.setInputFormatClass(FitnessInputFormat.class);
     job.setMapOutputKeyClass(NullWritable.class);
     job.setMapOutputValueClass(FitnessResultCoefficients.class);
     job.setMapperClass(FitnessMapper.class);
@@ -57,6 +60,7 @@ public class FitnessJob {
     job.setOutputKeyClass(NullWritable.class);
     job.setOutputValueClass(Text.class);
     job.setReducerClass(FitnessReducer.class);
+    job.setOutputFormatClass(TextOutputFormat.class);
   }
 
   /**
@@ -152,11 +156,13 @@ public class FitnessJob {
 
   public static class FitnessMapper
       extends Mapper<FitnessCoefficients, NullWritable, NullWritable, FitnessResultCoefficients> {
+    private static Block GARBAGE_BLOCK = new Block(Block.MASK_GARBAGE);
+    
     private static long countGarbageLines(Field field) {
       long garbageLines = 0;
       for (int y = 0; y < field.HEIGHT; ++y) {
         for (int x = 0; x < field.WIDTH; ++x) {
-          if (field.block(x, y) == Field.GARBAGE_BLOCK) {
+          if (field.block(x, y) == GARBAGE_BLOCK) {
             ++garbageLines;
             break;
           }
@@ -165,7 +171,6 @@ public class FitnessJob {
       return garbageLines;
     }
 
-    private int fieldHeight;
     private int garbageHeight;
     private int lookahead;
     private int retries;
@@ -178,16 +183,11 @@ public class FitnessJob {
 
     @Override
     protected void setup(Context context) throws IOException, InterruptedException {
-      fieldHeight = context.getConfiguration().getInt(FIELD_HEIGHT, -1);
       garbageHeight = context.getConfiguration().getInt(GARBAGE_HEIGHT, -1);
       lookahead = context.getConfiguration().getInt(LOOKAHEAD, -1);
       retries = context.getConfiguration().getInt(RETRIES, -1);
       generationSize = context.getConfiguration().getInt(GENERATION_SIZE, -1);
-
       best = new PriorityQueue<>(generationSize, new FitnessComparator());
-      for (int i = 0; i < generationSize; ++i) {
-        best.offer(new FitnessResultCoefficients());
-      }
     }
 
     @Override
@@ -195,26 +195,19 @@ public class FitnessJob {
         throws IOException, InterruptedException {
       Random random = new SecureRandom(Bytes.toArray(key.getCoefficients()));
 
-      FitnessResultCoefficients out = best.poll();
-      if (out.getResult() == null) {
-        out.setResult(new FitnessResult());
-        out.setCoefficients(new FitnessCoefficients(new ArrayList<>()));
-      }
-
-      out.getCoefficients().getCoefficients().clear();
-      for (Double d : key.getCoefficients()) {
-        out.getCoefficients().getCoefficients().add(d);
-      }
+      FitnessResultCoefficients out = new FitnessResultCoefficients();
+      out.setResult(new FitnessResult());
+      out.setCoefficients(new FitnessCoefficients(new ArrayList<>(key.getCoefficients())));
 
       long linesCleared = 0, remainingGarbage = 0;
 
       for (int i = 0; i < retries; ++i) {
-        Field field = new Field(Field.DEFAULT_WIDTH, fieldHeight);
+        Field field = new Field();
         for (int dy = 0; dy < garbageHeight; ++dy) {
           int y = (Field.BUFFER + field.HEIGHT - 1) - dy;
           for (int x = 0; x < field.WIDTH; ++x) {
             if (random.nextBoolean()) {
-              field.setBlock(x, y, Field.GARBAGE_BLOCK);
+              field.setBlock(x, y, GARBAGE_BLOCK);
             }
           }
         }
@@ -237,17 +230,59 @@ public class FitnessJob {
       out.getResult().setRemainingGarbage(remainingGarbage);
 
       best.offer(out);
+      if (best.size() > generationSize)
+        best.poll();
     }
 
     @Override
     protected void cleanup(Context context) throws IOException, InterruptedException {
-      while (best.size() > 0) {
+      while (!best.isEmpty()) {
         context.write(NullWritable.get(), best.poll());
       }
     }
   }
 
   public static class FitnessReducer extends Reducer<NullWritable, FitnessResultCoefficients, NullWritable, Text> {
-  }
+    private int generationSize;
+    private PriorityQueue<FitnessResultCoefficients> best;
 
+    @Override
+    protected void setup(Context context) throws IOException, InterruptedException {
+      generationSize = context.getConfiguration().getInt(GENERATION_SIZE, -1);
+    }
+
+    @Override
+    protected void reduce(NullWritable key, Iterable<FitnessResultCoefficients> values, Context context)
+        throws IOException, InterruptedException {
+      for (FitnessResultCoefficients out : values) {
+        best.offer(out);
+        if (best.size() > generationSize)
+          best.poll();
+      }
+    }
+
+    @Override
+    protected void cleanup(Context context) throws IOException, InterruptedException {
+      ArrayList<String> lines = new ArrayList<>(best.size());
+      while (!best.isEmpty()) {
+        FitnessResultCoefficients out = best.poll();
+        StringBuilder line = new StringBuilder();
+        for (Double d : out.getCoefficients().getCoefficients()) {
+          if (line.length() > 0)
+            line.append(", ");
+          line.append(d);
+        }
+        line.append(" # remaining_garbage: ");
+        line.append(out.getResult().getRemainingGarbage());
+        line.append(" lines_cleared: ");
+        line.append(out.getResult().getLinesCleared());
+        lines.add(line.toString());
+      }
+      Text text = new Text();
+      for (int i = lines.size() - 1; i >= 0; --i) {
+        text.set(lines.get(i));
+        context.write(NullWritable.get(), text);
+      }
+    }
+  }
 }
