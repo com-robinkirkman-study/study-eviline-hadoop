@@ -3,8 +3,10 @@ package com.robinkirkman.study.eviline.hadoop;
 import java.io.IOException;
 import java.security.SecureRandom;
 import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.PriorityQueue;
 import java.util.Random;
 import java.util.function.Function;
@@ -23,25 +25,45 @@ import org.eviline.core.ai.Player;
 public class FitnessTask {
   @FunctionalInterface
   public static interface FitnessWriter {
-    void write(FitnessResultCoefficients value) throws IOException, InterruptedException;
+    void write(FitnessCoefficientsResult value) throws IOException, InterruptedException;
   }
 
-  public static class FitnessComparator implements Comparator<FitnessResultCoefficients> {
-    @Override
-    public int compare(FitnessResultCoefficients lhs, FitnessResultCoefficients rhs) {
-      if (lhs.getResult() == null && rhs.getResult() == null)
-        return 0;
-      else if (lhs.getResult() == null)
-        return -1;
-      else if (rhs.getResult() == null)
+  public static class FitnessCoefficientsComparator implements Comparator<FitnessCoefficients> {
+    public int compare(FitnessCoefficients lhs, FitnessCoefficients rhs) {
+      Iterator<Double> li = lhs.getCoefficients().iterator();
+      Iterator<Double> ri = rhs.getCoefficients().iterator();
+      while (li.hasNext() && ri.hasNext()) {
+        int c = Double.compare(li.next(), ri.next());
+        if (c != 0)
+          return c;
+      }
+      if (li.hasNext())
         return 1;
-
-      int c = -Long.compare(lhs.getResult().getRemainingGarbage(), rhs.getResult().getRemainingGarbage());
-      if (c != 0)
-        return c;
-      return -Long.compare(lhs.getResult().getLinesCleared(), rhs.getResult().getLinesCleared());
+      if (ri.hasNext())
+        return -1;
+      return 0;
     }
   }
+
+  public static class FitnessResultComparator implements Comparator<FitnessResult> {
+    @Override
+    public int compare(FitnessResult lhs, FitnessResult rhs) {
+      if (lhs == null && rhs == null)
+        return 0;
+      else if (lhs == null)
+        return -1;
+      else if (rhs == null)
+        return 1;
+
+      int c = -Long.compare(lhs.getRemainingGarbage(), rhs.getRemainingGarbage());
+      if (c != 0)
+        return c;
+      return -Long.compare(lhs.getLinesCleared(), rhs.getLinesCleared());
+    }
+  }
+
+  public static Comparator<FitnessResult> FITNESS_RESULT_ORDER = new FitnessResultComparator();
+  public static Comparator<FitnessCoefficients> FITNESS_COEFFICIENTS_ORDER = new FitnessCoefficientsComparator();
 
   private static <D extends SpecificRecord> D deepCopy(D value) {
     return SpecificData.get().deepCopy(value.getSchema(), value);
@@ -107,7 +129,7 @@ public class FitnessTask {
 
     private Function<FitnessCoefficients, FitnessResult> evaluator;
 
-    private PriorityQueue<FitnessResultCoefficients> best;
+    private PriorityQueue<FitnessCoefficientsResult> best;
 
     public FitnessMapper(int garbageHeight, int lookahead, int retries, int generationSize) {
       this(newDefaultEvaluator(garbageHeight, lookahead, retries), generationSize);
@@ -119,14 +141,15 @@ public class FitnessTask {
     }
 
     public void setup() {
-      best = new PriorityQueue<>(generationSize, new FitnessComparator());
+      best = new PriorityQueue<>(generationSize,
+          (lhs, rhs) -> FITNESS_RESULT_ORDER.compare(lhs.getResult(), rhs.getResult()));
     }
 
     public void map(FitnessCoefficients key) {
-      FitnessResultCoefficients result = new FitnessResultCoefficients();
+      FitnessCoefficientsResult result = new FitnessCoefficientsResult();
       result.setCoefficients(deepCopy(key));
       result.setResult(evaluator.apply(result.getCoefficients()));
-      
+
       if (best.size() < generationSize) {
         best.offer(deepCopy(result));
       } else if (best.comparator().compare(result, best.peek()) > 0) {
@@ -144,17 +167,18 @@ public class FitnessTask {
 
   public static class FitnessReducer {
     private int generationSize;
-    private PriorityQueue<FitnessResultCoefficients> best;
+    private PriorityQueue<FitnessCoefficientsResult> best;
 
     public FitnessReducer(int generationSize) {
       this.generationSize = generationSize;
     }
 
     public void setup() {
-      best = new PriorityQueue<>(generationSize, new FitnessComparator());
+      best = new PriorityQueue<>(generationSize,
+          (lhs, rhs) -> FITNESS_RESULT_ORDER.compare(lhs.getResult(), rhs.getResult()));
     }
 
-    public void reduce(FitnessResultCoefficients value) {
+    public void reduce(FitnessCoefficientsResult value) {
       if (best.size() < generationSize) {
         best.offer(deepCopy(value));
       } else if (best.comparator().compare(value, best.peek()) > 0) {
@@ -164,7 +188,7 @@ public class FitnessTask {
     }
 
     public void cleanup(FitnessWriter writer) throws IOException, InterruptedException {
-      Deque<FitnessResultCoefficients> buf = new ArrayDeque<>(best.size());
+      Deque<FitnessCoefficientsResult> buf = new ArrayDeque<>(best.size());
       while (!best.isEmpty()) {
         buf.offerLast(best.poll());
       }

@@ -1,7 +1,7 @@
 {
 	"namespace": "com.robinkirkman.study.eviline.hadoop",
 	"type": "record",
-	"name": "FitnessResultCoefficients",
+	"name": "FitnessCoefficientsResult",
 	"fields": [
 		{
 			"name": "result",

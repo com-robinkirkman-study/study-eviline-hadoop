@@ -47,17 +47,17 @@ public class FitnessJob {
     
     job.setInputFormatClass(FitnessFormat.FitnessInputFormat.class);
     job.setMapOutputKeyClass(NullWritable.class);
-    job.setMapOutputValueClass(FitnessResultCoefficients.class);
+    job.setMapOutputValueClass(FitnessCoefficientsResult.class);
     job.setMapperClass(FitnessMapper.class);
     job.setNumReduceTasks(1);
     job.setOutputKeyClass(NullWritable.class);
-    job.setOutputValueClass(FitnessResultCoefficients.class);
+    job.setOutputValueClass(FitnessCoefficientsResult.class);
     job.setReducerClass(FitnessReducer.class);
     job.setOutputFormatClass(FitnessFormat.FitnessOutputFormat.class);
   }
 
   public static class FitnessMapper
-      extends Mapper<FitnessCoefficients, NullWritable, NullWritable, FitnessResultCoefficients> {
+      extends Mapper<FitnessCoefficients, NullWritable, NullWritable, FitnessCoefficientsResult> {
     private FitnessTask.FitnessMapper mapper;
 
     @Override
@@ -83,7 +83,7 @@ public class FitnessJob {
     }
   }
 
-  public static class FitnessReducer extends Reducer<NullWritable, FitnessResultCoefficients, NullWritable, FitnessResultCoefficients> {
+  public static class FitnessReducer extends Reducer<NullWritable, FitnessCoefficientsResult, NullWritable, FitnessCoefficientsResult> {
     private FitnessTask.FitnessReducer reducer;
 
     @Override
@@ -94,9 +94,9 @@ public class FitnessJob {
     }
 
     @Override
-    protected void reduce(NullWritable key, Iterable<FitnessResultCoefficients> values, Context context)
+    protected void reduce(NullWritable key, Iterable<FitnessCoefficientsResult> values, Context context)
         throws IOException, InterruptedException {
-      for (FitnessResultCoefficients value : values) {
+      for (FitnessCoefficientsResult value : values) {
         reducer.reduce(value);
       }
     }

@@ -58,7 +58,7 @@ public class FitnessFormat {
     return line.toString();
   }
 
-  public static String renderResultCoefficients(FitnessResultCoefficients out) {
+  public static String renderResultCoefficients(FitnessCoefficientsResult out) {
     StringBuilder line = new StringBuilder();
     line.append(renderCoefficients(out.getCoefficients()));
     line.append(" # remaining_garbage: ");
@@ -135,7 +135,7 @@ public class FitnessFormat {
     }
   }
 
-  public static class FitnessRecordWriter extends RecordWriter<NullWritable, FitnessResultCoefficients> {
+  public static class FitnessRecordWriter extends RecordWriter<NullWritable, FitnessCoefficientsResult> {
     private RecordWriter<NullWritable, Text> text;
 
     public FitnessRecordWriter(RecordWriter<NullWritable, Text> text) {
@@ -143,7 +143,7 @@ public class FitnessFormat {
     }
 
     @Override
-    public void write(NullWritable key, FitnessResultCoefficients value) throws IOException, InterruptedException {
+    public void write(NullWritable key, FitnessCoefficientsResult value) throws IOException, InterruptedException {
       text.write(key, new Text(renderResultCoefficients(value)));
     }
 
@@ -153,11 +153,11 @@ public class FitnessFormat {
     }
   }
 
-  public static class FitnessOutputFormat extends OutputFormat<NullWritable, FitnessResultCoefficients> {
+  public static class FitnessOutputFormat extends OutputFormat<NullWritable, FitnessCoefficientsResult> {
     private TextOutputFormat<NullWritable, Text> text = new TextOutputFormat<>();
 
     @Override
-    public RecordWriter<NullWritable, FitnessResultCoefficients> getRecordWriter(TaskAttemptContext context)
+    public RecordWriter<NullWritable, FitnessCoefficientsResult> getRecordWriter(TaskAttemptContext context)
         throws IOException, InterruptedException {
       // TODO Auto-generated method stub
       return null;

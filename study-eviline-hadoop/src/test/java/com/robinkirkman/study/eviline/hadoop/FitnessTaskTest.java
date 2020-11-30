@@ -11,9 +11,9 @@ public class FitnessTaskTest {
   @Test
   public void reductionLimitsGeneration() throws Exception {
     FitnessTask.FitnessReducer reducer = new FitnessTask.FitnessReducer(10);
-    List<FitnessResultCoefficients> reduced = new ArrayList<>();
+    List<FitnessCoefficientsResult> reduced = new ArrayList<>();
 
-    FitnessResultCoefficients value = FitnessResultCoefficients.newBuilder().build();
+    FitnessCoefficientsResult value = FitnessCoefficientsResult.newBuilder().build();
 
     reducer.setup();
     for (int i = 0; i < 5; ++i) {
