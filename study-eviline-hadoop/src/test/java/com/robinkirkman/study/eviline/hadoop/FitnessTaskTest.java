@@ -2,11 +2,8 @@ package com.robinkirkman.study.eviline.hadoop;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 
-import org.apache.hadoop.io.Text;
 import org.junit.Assert;
 import org.junit.Test;
 
