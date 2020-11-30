@@ -10,25 +10,25 @@ import org.apache.hadoop.io.Text;
 import org.junit.Assert;
 import org.junit.Test;
 
-public class FitnessJobTest {
+public class FitnessTaskTest {
   @Test
   public void reductionLimitsGeneration() throws Exception {
-    FitnessJob.FitnessReduction reduction = new FitnessJob.FitnessReduction(10);
-    List<Text> reduced = new ArrayList<>();
+    FitnessTask.FitnessReducer reducer = new FitnessTask.FitnessReducer(10);
+    List<FitnessResultCoefficients> reduced = new ArrayList<>();
 
     FitnessResultCoefficients value = FitnessResultCoefficients.newBuilder().build();
-    
-    reduction.setup();
+
+    reducer.setup();
     for (int i = 0; i < 5; ++i) {
       for (int j = 0; j < 5; ++j) {
         value.getResult().setRemainingGarbage(i);
         value.getResult().setLinesCleared(j);
         value.getCoefficients().getCoefficients().clear();
         value.getCoefficients().getCoefficients().addAll(Arrays.asList(1d, 2d, 3d, 4d, 5d));
-        reduction.reduce(value);
+        reducer.reduce(value);
       }
     }
-    reduction.cleanup((k, v) -> reduced.add(v));
+    reducer.cleanup(reduced::add);
 
     Assert.assertEquals(10, reduced.size());
   }
