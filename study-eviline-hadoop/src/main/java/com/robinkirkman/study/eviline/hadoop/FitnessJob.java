@@ -154,10 +154,14 @@ public class FitnessJob {
     }
   }
 
-  public static class FitnessMapper
-      extends Mapper<FitnessCoefficients, NullWritable, NullWritable, FitnessResultCoefficients> {
+  @FunctionalInterface
+  public static interface WriteFunction<K, V> {
+    void write(K k, V v) throws IOException, InterruptedException;
+  }
+
+  public static class FitnessMapping {
     private static Block GARBAGE_BLOCK = new Block(Block.MASK_GARBAGE);
-    
+
     private static long countGarbageLines(Field field) {
       long garbageLines = 0;
       for (int y = 0; y < field.HEIGHT; ++y) {
@@ -181,18 +185,18 @@ public class FitnessJob {
 
     private PriorityQueue<FitnessResultCoefficients> best;
 
-    @Override
-    protected void setup(Context context) throws IOException, InterruptedException {
-      garbageHeight = context.getConfiguration().getInt(GARBAGE_HEIGHT, -1);
-      lookahead = context.getConfiguration().getInt(LOOKAHEAD, -1);
-      retries = context.getConfiguration().getInt(RETRIES, -1);
-      generationSize = context.getConfiguration().getInt(GENERATION_SIZE, -1);
+    public FitnessMapping(int garbageHeight, int lookahead, int retries, int generationSize) {
+      this.garbageHeight = garbageHeight;
+      this.lookahead = lookahead;
+      this.retries = retries;
+      this.generationSize = generationSize;
+    }
+
+    public void setup() {
       best = new PriorityQueue<>(generationSize, new FitnessComparator());
     }
 
-    @Override
-    protected void map(FitnessCoefficients key, NullWritable value, Context context)
-        throws IOException, InterruptedException {
+    public void map(FitnessCoefficients key) {
       Random random = new SecureRandom(Bytes.toArray(key.getCoefficients()));
 
       FitnessResultCoefficients out = new FitnessResultCoefficients();
@@ -234,35 +238,33 @@ public class FitnessJob {
         best.poll();
     }
 
-    @Override
-    protected void cleanup(Context context) throws IOException, InterruptedException {
+    public void cleanup(WriteFunction<NullWritable, FitnessResultCoefficients> context)
+        throws IOException, InterruptedException {
       while (!best.isEmpty()) {
         context.write(NullWritable.get(), best.poll());
       }
     }
   }
 
-  public static class FitnessReducer extends Reducer<NullWritable, FitnessResultCoefficients, NullWritable, Text> {
+  public static class FitnessReduction {
     private int generationSize;
     private PriorityQueue<FitnessResultCoefficients> best;
 
-    @Override
-    protected void setup(Context context) throws IOException, InterruptedException {
-      generationSize = context.getConfiguration().getInt(GENERATION_SIZE, -1);
+    public FitnessReduction(int generationSize) {
+      this.generationSize = generationSize;
     }
 
-    @Override
-    protected void reduce(NullWritable key, Iterable<FitnessResultCoefficients> values, Context context)
-        throws IOException, InterruptedException {
-      for (FitnessResultCoefficients out : values) {
-        best.offer(out);
-        if (best.size() > generationSize)
-          best.poll();
-      }
+    public void setup() {
+      best = new PriorityQueue<>(generationSize, new FitnessComparator());
     }
 
-    @Override
-    protected void cleanup(Context context) throws IOException, InterruptedException {
+    public void reduce(FitnessResultCoefficients value) {
+      best.offer(value);
+      if (best.size() > generationSize)
+        best.poll();
+    }
+
+    public void cleanup(WriteFunction<NullWritable, Text> context) throws IOException, InterruptedException {
       ArrayList<String> lines = new ArrayList<>(best.size());
       while (!best.isEmpty()) {
         FitnessResultCoefficients out = best.poll();
@@ -283,6 +285,56 @@ public class FitnessJob {
         text.set(lines.get(i));
         context.write(NullWritable.get(), text);
       }
+    }
+  }
+
+  public static class FitnessMapper
+      extends Mapper<FitnessCoefficients, NullWritable, NullWritable, FitnessResultCoefficients> {
+    private FitnessMapping mapping;
+
+    @Override
+    protected void setup(Context context) throws IOException, InterruptedException {
+      int garbageHeight = context.getConfiguration().getInt(GARBAGE_HEIGHT, -1);
+      int lookahead = context.getConfiguration().getInt(LOOKAHEAD, -1);
+      int retries = context.getConfiguration().getInt(RETRIES, -1);
+      int generationSize = context.getConfiguration().getInt(GENERATION_SIZE, -1);
+
+      mapping = new FitnessMapping(garbageHeight, lookahead, retries, generationSize);
+      mapping.setup();
+    }
+
+    @Override
+    protected void map(FitnessCoefficients key, NullWritable value, Context context)
+        throws IOException, InterruptedException {
+      mapping.map(key);
+    }
+
+    @Override
+    protected void cleanup(Context context) throws IOException, InterruptedException {
+      mapping.cleanup(context::write);
+    }
+  }
+
+  public static class FitnessReducer extends Reducer<NullWritable, FitnessResultCoefficients, NullWritable, Text> {
+    private FitnessReduction reduction;
+
+    @Override
+    protected void setup(Context context) throws IOException, InterruptedException {
+      int generationSize = context.getConfiguration().getInt(GENERATION_SIZE, -1);
+      reduction = new FitnessReduction(generationSize);
+    }
+
+    @Override
+    protected void reduce(NullWritable key, Iterable<FitnessResultCoefficients> values, Context context)
+        throws IOException, InterruptedException {
+      for (FitnessResultCoefficients value : values) {
+        reduction.reduce(value);
+      }
+    }
+
+    @Override
+    protected void cleanup(Context context) throws IOException, InterruptedException {
+      reduction.cleanup(context::write);
     }
   }
 }
