@@ -1,0 +1,42 @@
+{
+	"namespace": "com.robinkirkman.study.eviline.hadoop",
+	"type": "record",
+	"name": "FitnessResultCoefficients",
+	"fields": [
+		{
+			"name": "result",
+			"type": {
+				"namespace": "com.robinkirkman.study.eviline.hadoop",
+				"type": "record",
+				"name": "FitnessResult",
+				"fields": [
+					{
+						"name": "remaining_garbage",
+						"type": "long"
+					},
+					{
+						"name": "lines_cleared",
+						"type": "long"
+					}
+				]
+			}
+		},
+		{
+			"name": "coefficients",
+			"type": {
+				"namespace": "com.robinkirkman.study.eviline.hadoop",
+				"type": "record",
+				"name": "FitnessCoefficients",
+				"fields": [
+					{
+						"name": "coefficients",
+						"type": {
+							"type": "array",
+							"items": "double"
+						}
+					}
+				]
+			}
+		}
+	]
+}

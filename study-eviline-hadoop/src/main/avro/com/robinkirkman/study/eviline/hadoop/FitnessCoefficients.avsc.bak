@@ -1,0 +1,14 @@
+{
+	"namespace": "com.robinkirkman.study.eviline.hadoop",
+	"type": "record",
+	"name": "FitnessCoefficients",
+	"fields": [
+		{
+			"name": "coefficients",
+			"type": {
+				"type": "array",
+				"items": "double"
+			}
+		}
+	]
+}
