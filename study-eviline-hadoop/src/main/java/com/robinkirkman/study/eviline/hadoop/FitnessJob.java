@@ -56,6 +56,32 @@ public class FitnessJob {
   public static final String GENERATION_SIZE = FitnessJob.class.getName() + ".generation_size";
   public static final String MUTATIONS = FitnessJob.class.getName() + ".mutations";
 
+  public static final int GARBAGE_HEIGHT_DEFAULT = 10;
+  public static final int LOOKAHEAD_DEFAULT = 3;
+  public static final int RETRIES_DEFAULT = 10;
+  public static final int GENERATION_SIZE_DEFAULT = 100;
+  public static final int MUTATIONS_DEFAULT = 10;
+  
+  public static void setGarbageHeight(Job job, int garbageHeight) {
+    job.getConfiguration().setInt(GARBAGE_HEIGHT, garbageHeight);
+  }
+  
+  public static void setLookahead(Job job, int lookahead) {
+    job.getConfiguration().setInt(LOOKAHEAD, lookahead);
+  }
+  
+  public static void setRetries(Job job, int retries) {
+    job.getConfiguration().setInt(RETRIES, retries);
+  }
+  
+  public static void setGenerationSize(Job job, int generationSize) {
+    job.getConfiguration().setInt(GENERATION_SIZE, generationSize);
+  }
+  
+  public static void setMutations(Job job, int mutations) {
+    job.getConfiguration().setInt(MUTATIONS, mutations);
+  }
+  
   public static void configureJob(Job job) {
     job.setInputFormatClass(FitnessInputFormat.class);
     job.setMapOutputKeyClass(NullWritable.class);
@@ -107,7 +133,7 @@ public class FitnessJob {
 
     @Override
     public void initialize(InputSplit split, TaskAttemptContext context) throws IOException, InterruptedException {
-      mutations = context.getConfiguration().getInt(MUTATIONS, -1);
+      mutations = context.getConfiguration().getInt(MUTATIONS, MUTATIONS_DEFAULT);
       lines.initialize(split, context);
     }
 
@@ -325,10 +351,10 @@ public class FitnessJob {
 
     @Override
     protected void setup(Context context) throws IOException, InterruptedException {
-      int garbageHeight = context.getConfiguration().getInt(GARBAGE_HEIGHT, -1);
-      int lookahead = context.getConfiguration().getInt(LOOKAHEAD, -1);
-      int retries = context.getConfiguration().getInt(RETRIES, -1);
-      int generationSize = context.getConfiguration().getInt(GENERATION_SIZE, -1);
+      int garbageHeight = context.getConfiguration().getInt(GARBAGE_HEIGHT, GARBAGE_HEIGHT_DEFAULT);
+      int lookahead = context.getConfiguration().getInt(LOOKAHEAD, LOOKAHEAD_DEFAULT);
+      int retries = context.getConfiguration().getInt(RETRIES, RETRIES_DEFAULT);
+      int generationSize = context.getConfiguration().getInt(GENERATION_SIZE, GENERATION_SIZE_DEFAULT);
 
       mapping = new FitnessMapping(garbageHeight, lookahead, retries, generationSize);
       mapping.setup();
@@ -351,7 +377,7 @@ public class FitnessJob {
 
     @Override
     protected void setup(Context context) throws IOException, InterruptedException {
-      int generationSize = context.getConfiguration().getInt(GENERATION_SIZE, -1);
+      int generationSize = context.getConfiguration().getInt(GENERATION_SIZE, GENERATION_SIZE_DEFAULT);
       reduction = new FitnessReduction(generationSize);
     }
 
