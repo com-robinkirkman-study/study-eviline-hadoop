@@ -20,6 +20,8 @@ import java.util.TreeMap;
 import org.apache.avro.hadoop.io.AvroDatumConverterFactory.AvroWrapperConverter;
 import org.apache.avro.mapred.AvroKey;
 import org.apache.avro.mapred.AvroValue;
+import org.apache.avro.specific.SpecificData;
+import org.apache.avro.specific.SpecificRecord;
 import org.apache.curator.shaded.com.google.common.primitives.Bytes;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
@@ -66,6 +68,10 @@ public class FitnessJob {
     job.setOutputFormatClass(TextOutputFormat.class);
   }
 
+  private static <D extends SpecificRecord> D deepCopy(D value) {
+    return SpecificData.get().deepCopy(value.getSchema(), value);
+  }
+
   /**
    * Comparator that places the worst results first, preceded by nulls.
    * 
@@ -91,7 +97,7 @@ public class FitnessJob {
 
   private static class FitnessRecordReader extends RecordReader<FitnessCoefficients, NullWritable> {
     private RecordReader<LongWritable, Text> lines;
-    
+
     private int mutations;
     private Deque<FitnessCoefficients> keys;
 
@@ -220,7 +226,7 @@ public class FitnessJob {
 
       FitnessResultCoefficients out = new FitnessResultCoefficients();
       out.setResult(new FitnessResult());
-      out.setCoefficients(new FitnessCoefficients(new ArrayList<>(key.getCoefficients())));
+      out.setCoefficients(deepCopy(key));
 
       long linesCleared = 0, remainingGarbage = 0;
 
@@ -252,9 +258,12 @@ public class FitnessJob {
       out.getResult().setLinesCleared(linesCleared);
       out.getResult().setRemainingGarbage(remainingGarbage);
 
-      best.offer(out);
-      if (best.size() > generationSize)
+      if (best.size() < generationSize) {
+        best.offer(deepCopy(out));
+      } else if (best.comparator().compare(out, best.peek()) > 0) {
         best.poll();
+        best.offer(deepCopy(out));
+      }
     }
 
     public void cleanup(WriteFunction<NullWritable, FitnessResultCoefficients> context)
@@ -278,9 +287,12 @@ public class FitnessJob {
     }
 
     public void reduce(FitnessResultCoefficients value) {
-      best.offer(value);
-      if (best.size() > generationSize)
+      if (best.size() < generationSize) {
+        best.offer(deepCopy(value));
+      } else if (best.comparator().compare(value, best.peek()) > 0) {
         best.poll();
+        best.offer(deepCopy(value));
+      }
     }
 
     public void cleanup(WriteFunction<NullWritable, Text> context) throws IOException, InterruptedException {

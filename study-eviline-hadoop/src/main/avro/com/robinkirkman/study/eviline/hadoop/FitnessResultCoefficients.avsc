@@ -12,14 +12,17 @@
 				"fields": [
 					{
 						"name": "remaining_garbage",
-						"type": "long"
+						"type": "long",
+						"default": 0
 					},
 					{
 						"name": "lines_cleared",
-						"type": "long"
+						"type": "long",
+						"default": 0
 					}
 				]
-			}
+			},
+			"default": {}
 		},
 		{
 			"name": "coefficients",
@@ -33,10 +36,12 @@
 						"type": {
 							"type": "array",
 							"items": "double"
-						}
+						},
+						"default": []
 					}
 				]
-			}
+			},
+			"default": {}
 		}
 	]
 }
