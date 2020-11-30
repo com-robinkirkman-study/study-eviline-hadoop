@@ -5,10 +5,12 @@ import java.io.DataOutput;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.security.SecureRandom;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
@@ -50,6 +52,7 @@ public class FitnessJob {
   public static final String LOOKAHEAD = FitnessJob.class.getName() + ".lookahead";
   public static final String RETRIES = FitnessJob.class.getName() + ".retries";
   public static final String GENERATION_SIZE = FitnessJob.class.getName() + ".generation_size";
+  public static final String MUTATIONS = FitnessJob.class.getName() + ".mutations";
 
   public static void configureJob(Job job) {
     job.setInputFormatClass(FitnessInputFormat.class);
@@ -88,20 +91,26 @@ public class FitnessJob {
 
   private static class FitnessRecordReader extends RecordReader<FitnessCoefficients, NullWritable> {
     private RecordReader<LongWritable, Text> lines;
-    private FitnessCoefficients key;
+    
+    private int mutations;
+    private Deque<FitnessCoefficients> keys;
 
     public FitnessRecordReader(RecordReader<LongWritable, Text> lines) {
       this.lines = lines;
-      key = new FitnessCoefficients(new ArrayList<>());
     }
 
     @Override
     public void initialize(InputSplit split, TaskAttemptContext context) throws IOException, InterruptedException {
+      mutations = context.getConfiguration().getInt(MUTATIONS, -1);
       lines.initialize(split, context);
     }
 
     @Override
     public boolean nextKeyValue() throws IOException, InterruptedException {
+      if (!keys.isEmpty()) {
+        keys.poll();
+        return true;
+      }
       while (lines.nextKeyValue()) {
         String line = lines.getCurrentValue().toString();
         if (line.contains("#"))
@@ -109,9 +118,19 @@ public class FitnessJob {
         String[] coefficients = line.split(",");
         if (coefficients.length == 1 && coefficients[0].trim().isEmpty())
           continue;
-        key.getCoefficients().clear();
+        Random random = new SecureRandom(line.getBytes());
+        FitnessCoefficients key = new FitnessCoefficients();
+        key.setCoefficients(new ArrayList<>(coefficients.length));
         for (String c : coefficients) {
           key.getCoefficients().add(Double.parseDouble(c));
+        }
+        keys.offer(key);
+        for (int i = 0; i < mutations; ++i) {
+          FitnessCoefficients mutation = new FitnessCoefficients();
+          mutation.setCoefficients(new ArrayList<>(coefficients.length));
+          for (Double d : key.getCoefficients())
+            mutation.getCoefficients().add(d + 0.5 - random.nextDouble());
+          keys.offer(mutation);
         }
         return true;
       }
@@ -120,7 +139,7 @@ public class FitnessJob {
 
     @Override
     public FitnessCoefficients getCurrentKey() throws IOException, InterruptedException {
-      return key;
+      return keys.peek();
     }
 
     @Override
