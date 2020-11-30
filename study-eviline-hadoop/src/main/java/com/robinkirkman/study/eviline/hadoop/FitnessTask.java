@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.PriorityQueue;
 import java.util.Random;
+import java.util.function.Function;
 
 import org.apache.avro.specific.SpecificData;
 import org.apache.avro.specific.SpecificRecord;
@@ -62,20 +63,58 @@ public class FitnessTask {
       return garbageLines;
     }
 
-    private int garbageHeight;
-    private int lookahead;
-    private int retries;
+    public static Function<FitnessCoefficients, FitnessResult> newDefaultEvaluator(int garbageHeight, int lookahead,
+        int retries) {
+      return (FitnessCoefficients key) -> {
+        Random random = new SecureRandom(Bytes.toArray(key.getCoefficients()));
+        long linesCleared = 0, remainingGarbage = 0;
+
+        for (int i = 0; i < retries; ++i) {
+          Field field = new Field();
+          for (int dy = 0; dy < garbageHeight; ++dy) {
+            int y = (Field.BUFFER + field.HEIGHT - 1) - dy;
+            for (int x = 0; x < field.WIDTH; ++x) {
+              if (random.nextBoolean()) {
+                field.setBlock(x, y, GARBAGE_BLOCK);
+              }
+            }
+          }
+
+          Engine engine = new Engine(field,
+              new org.eviline.core.Configuration(/* downFrames= */1, /* respawnFrames= */1));
+          DefaultFitness fitness = new DefaultFitness();
+          DefaultAIKernel aiKernel = new DefaultAIKernel(fitness);
+          Player player = new AIPlayer(aiKernel, engine, lookahead);
+
+          while (!engine.isOver()) {
+            engine.tick(player.tick());
+            if (countGarbageLines(field) == 0)
+              break;
+          }
+
+          linesCleared += engine.getLines();
+          remainingGarbage += countGarbageLines(field);
+        }
+
+        FitnessResult value = new FitnessResult();
+        value.setLinesCleared(linesCleared);
+        value.setRemainingGarbage(remainingGarbage);
+        return value;
+      };
+    }
+
     private int generationSize;
 
-    private DefaultFitness fitness = new DefaultFitness();
-    private DefaultAIKernel aiKernel = new DefaultAIKernel(fitness);
+    private Function<FitnessCoefficients, FitnessResult> evaluator;
 
     private PriorityQueue<FitnessResultCoefficients> best;
 
     public FitnessMapper(int garbageHeight, int lookahead, int retries, int generationSize) {
-      this.garbageHeight = garbageHeight;
-      this.lookahead = lookahead;
-      this.retries = retries;
+      this(newDefaultEvaluator(garbageHeight, lookahead, retries), generationSize);
+    }
+
+    public FitnessMapper(Function<FitnessCoefficients, FitnessResult> evaluator, int generationSize) {
+      this.evaluator = evaluator;
       this.generationSize = generationSize;
     }
 
@@ -84,42 +123,10 @@ public class FitnessTask {
     }
 
     public void map(FitnessCoefficients key) {
-      Random random = new SecureRandom(Bytes.toArray(key.getCoefficients()));
-
       FitnessResultCoefficients result = new FitnessResultCoefficients();
-      result.setResult(new FitnessResult());
       result.setCoefficients(deepCopy(key));
-
-      long linesCleared = 0, remainingGarbage = 0;
-
-      for (int i = 0; i < retries; ++i) {
-        Field field = new Field();
-        for (int dy = 0; dy < garbageHeight; ++dy) {
-          int y = (Field.BUFFER + field.HEIGHT - 1) - dy;
-          for (int x = 0; x < field.WIDTH; ++x) {
-            if (random.nextBoolean()) {
-              field.setBlock(x, y, GARBAGE_BLOCK);
-            }
-          }
-        }
-
-        Engine engine = new Engine(field,
-            new org.eviline.core.Configuration(/* downFrames= */1, /* respawnFrames= */1));
-        Player player = new AIPlayer(aiKernel, engine, lookahead);
-
-        while (!engine.isOver()) {
-          engine.tick(player.tick());
-          if (countGarbageLines(field) == 0)
-            break;
-        }
-
-        linesCleared += engine.getLines();
-        remainingGarbage += countGarbageLines(field);
-      }
-
-      result.getResult().setLinesCleared(linesCleared);
-      result.getResult().setRemainingGarbage(remainingGarbage);
-
+      result.setResult(evaluator.apply(result.getCoefficients()));
+      
       if (best.size() < generationSize) {
         best.offer(deepCopy(result));
       } else if (best.comparator().compare(result, best.peek()) > 0) {
